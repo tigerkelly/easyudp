@@ -18,3 +18,5 @@ The easyUdpClient and easyUdpSend are used by the client to create a UDP socket 
 to the server.
 
 Read the source code for more information.
+
+If you have any questions just ask.
