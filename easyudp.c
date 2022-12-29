@@ -42,6 +42,7 @@
 
 bool stopThread = false;
 int maxMsgSize = 0;
+int _seqNum = 0;
 char *maxBuffer = NULL;
 
 void *_easyUdpCapture(void *param);
@@ -74,6 +75,8 @@ SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI
 		return(NULL);
 	}
 
+	_seqNum = seqNumStart;
+
 	// Set up returning structure.
 	SDI *sdi = (SDI *)calloc(1, sizeof(SDI));
 	strcpy(sdi->ipAddr, ipAddr);
@@ -94,7 +97,8 @@ SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI
 
 // Only to be called by the easyUdpServer function.
 void *_easyUdpCapture(void *param) {
-	int n, len;
+	int n;
+    unsigned int len;
 
 	SDI *sdi = (SDI *)param;
 
@@ -103,7 +107,7 @@ void *_easyUdpCapture(void *param) {
 	UdpData *ud = &(sdi->udpData);
 
 	while (stopThread == false) {
-		// Recvieve the data into the UdpData structure, this means only systems with the same
+		// Retrive the data into the UdpData structure, this means only systems with the same
 		// CPU Endianess will work.  If you have different processor types then you may have to
 		// use the ntohl and htonl on the dataSize and seqNum fields.
 		n = recvfrom(sdi->sock, (char *)ud,
@@ -155,11 +159,13 @@ USI *easyUdpClient(char *ipAddr, int port, int seqNumStart, int sendCount) {
 
 // Used by client to send data to server.
 int easyUdpSend(USI *usi, char *dataBuffer, int dataSize) {
-	int n, len; 
 	struct sockaddr_in servaddr; 
 
+	if (dataSize <= 0)
+		dataSize = strlen(dataBuffer);
+
 	if (dataSize > usi->maxSize) {
-		printf("dataSize is greaterr than maxSize.\n");
+		printf("dataSize is greater than maxSize.\n");
 		return -1;
 	}
 
@@ -172,16 +178,17 @@ int easyUdpSend(USI *usi, char *dataBuffer, int dataSize) {
 
 	UdpData *ud = &(usi->udpData);
 
-	ud->dataSize = dataSize;
+	ud->seqNum = htonl(_seqNum);
+	ud->dataSize = htonl(dataSize);
 	memcpy(ud->dataBuffer, dataBuffer, dataSize);
 
 	for (int i = 0; i < usi->sendCount; i++) {
 		sendto(usi->sock, (const char *)ud,
-				ud->dataSize + (sizeof(int) * 2),
+				dataSize + (sizeof(int) * 2),
 				MSG_CONFIRM, (const struct sockaddr *) &servaddr,  sizeof(servaddr));
 	}
 
-	ud->seqNum++;
+	_seqNum++;
 
 	return 0;
 }
