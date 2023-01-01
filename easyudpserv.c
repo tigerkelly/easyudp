@@ -15,12 +15,12 @@
 
 int idx = 0;
 int lastSeqNums[MAX_SEQ_NUMS];
+SDI *sdi = NULL;
 
 void callback(SDI *sdi);
 
 int main(int argc, char *argv[]) {
 
-	SDI *sdi = NULL;
 
 	memset(lastSeqNums, 0, sizeof(lastSeqNums));
 
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
 	// If you have a two nic card system then you can run both client and server on
 	// same system.
 
-	sdi = easyUdp("192.168.0.121", "192.168.0.15", 8383, 1, &callback);
+	sdi = easyUdp("192.168.0.15", "192.168.0.24", 8383, 1, &callback);
 	if( sdi == NULL) {
 		printf("Can not create server socket.\n");
 		exit(1);
@@ -47,10 +47,15 @@ int main(int argc, char *argv[]) {
 
 void callback(SDI *sdi) {
 	bool seenFlag = false;
+	int sn = 0;
+    int ds = 0;
+
+    sn = ntohl(sdi->udpData.seqNum);
+    ds = ntohl(sdi->udpData.dataSize);
 
 	// Check if we have seen this seqNum before.
 	for (int i = 0; i < MAX_SEQ_NUMS; i++) {
-		if (lastSeqNums[i] == sdi->udpData.seqNum) {
+		if (lastSeqNums[i] == sn) {
 			// we have seen this seqnum before.
 			seenFlag = true;
 		}
@@ -61,12 +66,12 @@ void callback(SDI *sdi) {
 	if (idx >= MAX_SEQ_NUMS)
 		idx = 0;
 
-	lastSeqNums[idx++] = sdi->udpData.seqNum;
+	lastSeqNums[idx++] = sn;
 	
-	sdi->udpData.dataBuffer[sdi->udpData.dataSize] = '\0';
+	sdi->udpData.dataBuffer[ds] = '\0';
 
 	printf("Got buffer %s size %d, seqNum %d from %s\n",
-			sdi->udpData.dataBuffer, sdi->udpData.dataSize, sdi->udpData.seqNum, inet_ntoa(sdi->from.sin_addr));
+			sdi->udpData.dataBuffer, ds, sn, inet_ntoa(sdi->from.sin_addr));
 
 	// Do something with the data.
 }

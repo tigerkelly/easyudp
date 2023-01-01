@@ -5,10 +5,10 @@ easyudp.o: easyudp.c easyudp.h
 	cc -c easyudp.c -o easyudp.o
 
 easyudpserv.o: easyudpserv.c easyudp.h
-	cc -c easyudpserv.c -o easyudpserv.o
+	cc -g -c easyudpserv.c -o easyudpserv.o
 
 easyudpcli.o: easyudpcli.c easyudp.h
-	cc -c easyudpcli.c -o easyudpcli.o
+	cc -g -c easyudpcli.c -o easyudpcli.o
 
 easyudpserv: easyudpserv.o easyudp.o
 	cc easyudpserv.o easyudp.o -o easyudpserv -lpthread

@@ -71,7 +71,7 @@ SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callb
 
 	// Bind the socket.
 	if ( bind(sock, (const struct sockaddr *)&servaddr,  sizeof(servaddr)) < 0 ) {
-		printf("Bind failed. %s", strerror(errno));
+		printf("Bind failed. %s. ", strerror(errno));
 		return(NULL);
 	}
 
