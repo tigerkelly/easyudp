@@ -18,31 +18,21 @@ typedef struct _udpData_ {
 typedef struct _servDataInfo {
 	int sock;
 	int port;
+	int sendCount;
 	int maxSize;
 	int seqNumStart;
 	void (*callback) (struct _servDataInfo *sdi);
-	char ipAddr[16];
+	char servIp[16];
+	char bindIp[16];
 	struct sockaddr_in from;
 	UdpData udpData;
 } SDI;
 
-typedef struct _udpSendInfo {
-	int sock;
-	int port;
-	int sendCount;
-	int maxSize;
-	int seqNumStart;
-	char ipAddr[16];
-	UdpData udpData;
-} USI;
+SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callback)(SDI *sdi));
 
-SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI *sdi));
-void stopEasyUdpServer(SDI *sdi);
+int easyUdpSend(SDI *sdi, char *dataBuffer, int dataSize);
+int easyUdpRespond(SDI *sdi, char *dataBuffer, int dataSize);
 
-USI *easyUdpClient(char *ipAddr, int port, int seqNumStart, int sendCount);
-int easyUdpSend(USI *usi, char *dataBuffer, int dataSize);
-
-void easyUdpServerFree(SDI *sdi);
-void easyUdpClientFree(USI *usi);
+void easyUdpFree(SDI *sdi);
 
 #endif

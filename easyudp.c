@@ -50,7 +50,7 @@ void *_easyUdpCapture(void *param);
 // Create a UDP server.
 // The ipAddr can be an IP address of a local nic card or a value of NULL means listen on all local addreesses.
 // The max size of a data packet is controlled by the #define MAX_DATA_SIZE in easyudp.h.
-SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI *sdi)) {
+SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callback)(SDI *sdi)) {
 	int sock;
 	struct sockaddr_in     servaddr;
 
@@ -64,10 +64,10 @@ SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI
 
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(port);
-	if (ipAddr == NULL)
-		servaddr.sin_addr.s_addr = INADDR_ANY;
+	if (bindIp == NULL)
+		servaddr.sin_addr.s_addr = INADDR_ANY;	// Bind to all interfaces.
 	else
-		servaddr.sin_addr.s_addr = inet_addr(ipAddr);
+		servaddr.sin_addr.s_addr = inet_addr(bindIp);
 
 	// Bind the socket.
 	if ( bind(sock, (const struct sockaddr *)&servaddr,  sizeof(servaddr)) < 0 ) {
@@ -79,7 +79,8 @@ SDI *easyUdpServer(char *ipAddr, int port, int seqNumStart, void (*callback)(SDI
 
 	// Set up returning structure.
 	SDI *sdi = (SDI *)calloc(1, sizeof(SDI));
-	strcpy(sdi->ipAddr, ipAddr);
+	strcpy(sdi->bindIp, bindIp);
+	strcpy(sdi->servIp, servIp);
 	sdi->sock = sock;
 	sdi->maxSize = MAX_DATA_SIZE;
 	sdi->port = port;
@@ -107,12 +108,11 @@ void *_easyUdpCapture(void *param) {
 	UdpData *ud = &(sdi->udpData);
 
 	while (stopThread == false) {
-		// Retrive the data into the UdpData structure, this means only systems with the same
-		// CPU Endianess will work.  If you have different processor types then you may have to
-		// use the ntohl and htonl on the dataSize and seqNum fields.
+		// printf("Waiting for packet.\n");
+		// Endianness is handled in callback function.
 		n = recvfrom(sdi->sock, (char *)ud,
 				(sdi->maxSize + (sizeof(int) * 2)),
-				MSG_WAITALL,
+				0,
 				(struct sockaddr *) &(sdi->from), &len);
 
 		if (n < 0) {
@@ -127,44 +127,20 @@ void *_easyUdpCapture(void *param) {
 			// call the callback function.
 			(*sdi->callback)(sdi);
 		}
-
-		sleep(1);
 	}
 	close(sdi->sock);
 
 	return NULL;
 }
 
-// Creates an unbound UDP socket that a client can use to send data to server.
-USI *easyUdpClient(char *ipAddr, int port, int seqNumStart, int sendCount) {
-	int sock;
-
-	if ( (sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
-		printf("Socket creation failed. %s", strerror(errno)); 
-		return NULL;
-	} 
-
-	USI *usi = (USI *)calloc(1, sizeof(USI));
-
-	usi->sock = sock;
-	usi->port = port;
-	usi->sendCount = sendCount;
-	usi->maxSize = MAX_DATA_SIZE;
-	usi->seqNumStart = seqNumStart;
-	usi->udpData.seqNum = seqNumStart;
-	strcpy(usi->ipAddr, ipAddr);
-
-	return usi;
-}
-
 // Used by client to send data to server.
-int easyUdpSend(USI *usi, char *dataBuffer, int dataSize) {
+int easyUdpSend(SDI *sdi, char *dataBuffer, int dataSize) {
 	struct sockaddr_in servaddr; 
 
 	if (dataSize <= 0)
 		dataSize = strlen(dataBuffer);
 
-	if (dataSize > usi->maxSize) {
+	if (dataSize > sdi->maxSize) {
 		printf("dataSize is greater than maxSize.\n");
 		return -1;
 	}
@@ -173,19 +149,26 @@ int easyUdpSend(USI *usi, char *dataBuffer, int dataSize) {
 
 	// Filling server information 
 	servaddr.sin_family = AF_INET; 
-	servaddr.sin_port = htons(usi->port); 
-	servaddr.sin_addr.s_addr = inet_addr(usi->ipAddr);
+	servaddr.sin_port = htons(sdi->port); 
+	servaddr.sin_addr.s_addr = inet_addr(sdi->servIp);
 
-	UdpData *ud = &(usi->udpData);
+	printf("Sending packet to: (%d) %s:%d, %d\n", _seqNum, sdi->servIp, sdi->port, sdi->sendCount);
+
+	UdpData *ud = &(sdi->udpData);
 
 	ud->seqNum = htonl(_seqNum);
 	ud->dataSize = htonl(dataSize);
 	memcpy(ud->dataBuffer, dataBuffer, dataSize);
 
-	for (int i = 0; i < usi->sendCount; i++) {
-		sendto(usi->sock, (const char *)ud,
+	for (int i = 0; i < sdi->sendCount; i++) {
+		int r = sendto(sdi->sock, (const char *)ud,
 				dataSize + (sizeof(int) * 2),
 				MSG_CONFIRM, (const struct sockaddr *) &servaddr,  sizeof(servaddr));
+		if (r < 0) {
+			printf("sendto failed: %s\n", strerror(errno));
+		} else {
+			// printf("Sent %d bytes\n", r);
+		}
 	}
 
 	_seqNum++;
@@ -193,19 +176,38 @@ int easyUdpSend(USI *usi, char *dataBuffer, int dataSize) {
 	return 0;
 }
 
-void easyUdpServerFree(SDI *sdi) {
+int easyUdpRespond(SDI *sdi, char *dataBuffer, int dataSize) {
+
+	if (dataSize <= 0)
+		dataSize = strlen(dataBuffer);
+
+	if (dataSize > sdi->maxSize) {
+		printf("Repsond dataSize is greater than maxSize.\n");
+		return -1;
+	}
+
+	UdpData *ud = &(sdi->udpData);
+
+	ud->seqNum = htonl(_seqNum);
+	ud->dataSize = htonl(dataSize);
+	memcpy(ud->dataBuffer, dataBuffer, dataSize);
+
+	for (int i = 0; i < sdi->sendCount; i++) {
+		sendto(sdi->sock, (const char *)ud,
+				dataSize + (sizeof(int) * 2),
+				0, (const struct sockaddr *) &sdi->from,  sizeof(sdi->from));
+	}
+
+	_seqNum++;
+
+	return 0;
+}
+
+void easyUdpFree(SDI *sdi) {
 	if (sdi != NULL) {
 		if (sdi->sock > 0)
 			close(sdi->sock);
 		stopThread = true;
 		free(sdi);
-	}
-}
-
-void easyUdpClientFree(USI *usi) {
-	if (usi != NULL) {
-		if (usi->sock > 0)
-			close(usi->sock);
-		free(usi);
 	}
 }

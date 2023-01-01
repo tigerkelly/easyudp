@@ -24,17 +24,23 @@ int main(int argc, char *argv[]) {
 
 	memset(lastSeqNums, 0, sizeof(lastSeqNums));
 
-	sdi = easyUdpServer("192.168.0.121", 8383, 1, &callback);
+	// The client and server program must be on different systems or interfaces.
+	// If you have a two nic card system then you can run both client and server on
+	// same system.
+
+	sdi = easyUdp("192.168.0.121", "192.168.0.15", 8383, 1, &callback);
 	if( sdi == NULL) {
 		printf("Can not create server socket.\n");
 		exit(1);
 	}
 
+	sdi->sendCount = 2;		// Set send number count, how many times the packet is sent.
+
 	while(true) {
 		sleep(2);
 	}
 
-	easyUdpServerFree(sdi);
+	easyUdpFree(sdi);
 
 	return 0;
 }
