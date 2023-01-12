@@ -34,7 +34,7 @@
  *
  * Lets say you are sending data to a central server that needs to record and acknowledge the receipt of the data.
  * The server would verify that the seqNum is correct and that it has not already process this seqNum.
- * It would then send back a packet with a different seqNum but the data would comntain the seqNum it is verifing.
+ * It would then send back a packet with a different seqNum but the data would contain the seqNum it is verifing.
  * Both the sender and receiver would send the packet N times with the same seqNum, the sender and receiver would
  * ignore packets that have a seqNum they have already processed.
  * I will leave the resending of lost packets for you to handle.
@@ -48,7 +48,7 @@ char *maxBuffer = NULL;
 void *_easyUdpCapture(void *param);
 
 // Create a UDP server.
-// The ipAddr can be an IP address of a local nic card or a value of NULL means listen on all local addreesses.
+// The bindIp can be an IP address of a local nic card or a value of NULL means listen on all local addreesses.
 // The max size of a data packet is controlled by the #define MAX_DATA_SIZE in easyudp.h.
 SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callback)(SDI *sdi)) {
 	int sock;
