@@ -12,9 +12,9 @@ The test programs are easyudpserv.c and easyudpcli.c.
 
 The functions are as follows.
 
-The easyUdpServer function is the only call needed to setup a UDP server.
+The easyUdp function is the only call needed to setup a UDP server.
 
-The easyUdpClient and easyUdpSend are used by the client to create a UDP socket and send data
+The easyUdpSend are used by the client to create a UDP socket and send data
 to the server.
 
 Read the source code for more information.
