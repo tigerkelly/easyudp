@@ -25,9 +25,35 @@ int main(int argc, char *argv[]) {
 	// The 4 argument is the starting seqence number, normally 1 or greater.
 	// The 5 argument is the callback function, to be called each time a packet arrives.
 
-	sdi = easyUdp("192.168.0.15", "192.168.0.121", 8383, 2, clientCallback);
+	char *ifAddr = NULL;
+	char *servAddr = NULL;
+	short servPort = 0;
+	int startSeqNum = 0;
 
-	sdi->sendCount = 2;		// Set send number count, how many times the packet is sent.
+	servPort = 8383;
+	startSeqNum = 2;
+
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-i") == 0) {
+			ifAddr = strdup(argv[i+1]);
+		} else if (strcmp(argv[i], "-s") == 0) {
+			servAddr = strdup(argv[i+1]);
+		} else if (strcmp(argv[i], "-p") == 0) {
+			servPort = atoi(argv[i+1]);
+		} else if (strcmp(argv[i], "-n") == 0) {
+			startSeqNum = atoi(argv[i+1]);
+		}
+	}
+
+	if (servAddr == NULL) {
+		printf("No server address given. -s 192.168.0.24\n");
+		exit(1);
+	}
+
+
+	sdi = easyUdp(ifAddr, servAddr, servPort, startSeqNum, clientCallback);
+
+	sdi->sendCount = 2;		// Set the number of times a packet is sent.
 
 	easyUdpSend(sdi, "From easyudpcli 1", 17 );
 	easyUdpSend(sdi, "From easyudpcli 2", 17 );

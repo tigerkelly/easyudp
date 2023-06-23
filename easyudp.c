@@ -79,7 +79,8 @@ SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callb
 
 	// Set up returning structure.
 	SDI *sdi = (SDI *)calloc(1, sizeof(SDI));
-	strcpy(sdi->bindIp, bindIp);
+	if (bindIp != NULL)
+		strcpy(sdi->bindIp, bindIp);
 	strcpy(sdi->servIp, servIp);
 	sdi->sock = sock;
 	sdi->maxSize = MAX_DATA_SIZE;
