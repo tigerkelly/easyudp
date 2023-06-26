@@ -40,17 +40,19 @@
  * I will leave the resending of lost packets for you to handle.
  */
 
-bool stopThread = false;
-int maxMsgSize = 0;
-int _seqNum = 0;
-char *maxBuffer = NULL;
+static bool stopThread = false;
+static int _seqNum = 0;
 
-void *_easyUdpCapture(void *param);
+static int idx = 0;
+static int *lastSeqNums = NULL;
+
+static void *easyUdpCapture(void *param);
 
 // Create a UDP server.
 // The bindIp can be an IP address of a local nic card or a value of NULL means listen on all local addreesses.
 // The max size of a data packet is controlled by the #define MAX_DATA_SIZE in easyudp.h.
-SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callback)(SDI *sdi)) {
+//
+SDI *easyUdp(EasyData *ed, void (*callback)(SDI *sdi)) {
 	int sock;
 	struct sockaddr_in     servaddr;
 
@@ -63,11 +65,11 @@ SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callb
 	memset(&servaddr, 0, sizeof(servaddr));
 
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_port = htons(port);
-	if (bindIp == NULL)
+	servaddr.sin_port = htons(ed->listenPort);
+	if (ed->ifAddr[0] == '\0')
 		servaddr.sin_addr.s_addr = INADDR_ANY;	// Bind to all interfaces.
 	else
-		servaddr.sin_addr.s_addr = inet_addr(bindIp);
+		servaddr.sin_addr.s_addr = inet_addr(ed->ifAddr);
 
 	// Bind the socket.
 	if ( bind(sock, (const struct sockaddr *)&servaddr,  sizeof(servaddr)) < 0 ) {
@@ -75,30 +77,44 @@ SDI *easyUdp(char *bindIp, char *servIp, int port, int seqNumStart, void (*callb
 		return(NULL);
 	}
 
-	_seqNum = seqNumStart;
+	_seqNum = ed->seqNumStart;
+
+	if (ed->maxLookBack <= 0)
+		ed->maxLookBack = DEFAULT_LOOKBACK_NUM;
+	if (ed->seqNumStart <= 0)
+		ed->seqNumStart = DEFAULT_START_SEQNUM;
+	if (ed->sendCount <= 0 || ed->sendCount > MAX_SENDCOUNT)
+		ed->sendCount = DEFAULT_SENDCOUNT;
+
+	lastSeqNums = (int *)calloc(1, (sizeof(int) * ed->maxLookBack));
+	if (lastSeqNums == NULL) {
+		return NULL;
+	}
 
 	// Set up returning structure.
 	SDI *sdi = (SDI *)calloc(1, sizeof(SDI));
-	if (bindIp != NULL)
-		strcpy(sdi->bindIp, bindIp);
-	strcpy(sdi->servIp, servIp);
+	if (ed->ifAddr != NULL)
+		strcpy(sdi->ifAddr, ed->ifAddr);
+	strcpy(sdi->servIp, ed->servIp);
+	sdi->maxSize = DEFAULT_MAX_SIZE;
 	sdi->sock = sock;
-	sdi->maxSize = MAX_DATA_SIZE;
-	sdi->port = port;
-	sdi->seqNumStart = seqNumStart;
+	sdi->listenPort = ed->listenPort;
+	sdi->seqNumStart = ed->seqNumStart;
 	sdi->callback = callback;
-	sdi->udpData.seqNum = sdi->seqNumStart;
+	sdi->sendCount = ed->sendCount;
+
+	sdi->udpData.seqNum = ed->seqNumStart;
 
 	pthread_t thd;
 
 	// The thread is passed needed information in the Params structure.
-	pthread_create(&thd, NULL, _easyUdpCapture, (void *) sdi);
+	pthread_create(&thd, NULL, easyUdpCapture, (void *) sdi);
 
 	return sdi;
 }
 
 // Only to be called by the easyUdpServer function.
-void *_easyUdpCapture(void *param) {
+static void *easyUdpCapture(void *param) {
 	int n;
     unsigned int len;
 
@@ -110,9 +126,8 @@ void *_easyUdpCapture(void *param) {
 
 	while (stopThread == false) {
 		// printf("Waiting for packet.\n");
-		// Endianness is handled in callback function.
 		n = recvfrom(sdi->sock, (char *)ud,
-				(sdi->maxSize + (sizeof(int) * 2)),
+				sizeof(UdpData),
 				0,
 				(struct sockaddr *) &(sdi->from), &len);
 
@@ -122,11 +137,25 @@ void *_easyUdpCapture(void *param) {
 			continue;
 		}
 
-		// printf("After %d recvfrom %d seqNum %d\n", n, ud->dataSize, ud->seqNum);
+		// printf("After %d recvfrom %d seqNum %d\n", n, ntohl(ud->dataSize), ntohl(ud->seqNum));
 
 		if (n > 0) {
+			int seqNum = ntohl(ud->seqNum);
+			bool processFlag = true;
+			for (int i = 0; i < sdi->sendCount; i++) {
+				if (lastSeqNums[i] == seqNum) {
+					processFlag = false;
+					break;
+				}
+			}
+
 			// call the callback function.
-			(*sdi->callback)(sdi);
+			if (processFlag == true) {
+				if (idx >= sdi->maxLookBack)
+					idx = 0;
+				lastSeqNums[idx++] = seqNum;
+				(*sdi->callback)(sdi);
+			}
 		}
 	}
 	close(sdi->sock);
@@ -150,18 +179,22 @@ int easyUdpSend(SDI *sdi, char *dataBuffer, int dataSize) {
 
 	// Filling server information 
 	servaddr.sin_family = AF_INET; 
-	servaddr.sin_port = htons(sdi->port); 
+	servaddr.sin_port = htons(sdi->listenPort); 
 	servaddr.sin_addr.s_addr = inet_addr(sdi->servIp);
 
-	printf("Sending packet to: (%d) %s:%d, %d\n", _seqNum, sdi->servIp, sdi->port, sdi->sendCount);
+	// printf("Sending packet to: (%d) %s:%d, %d\n", _seqNum, sdi->servIp, sdi->port, sdi->sendCount);
 
 	UdpData *ud = &(sdi->udpData);
 
 	ud->seqNum = htonl(_seqNum);
 	ud->dataSize = htonl(dataSize);
 	memcpy(ud->dataBuffer, dataBuffer, dataSize);
+	int count = sdi->sendCount;
 
-	for (int i = 0; i < sdi->sendCount; i++) {
+	if (count <= 0)
+		count = 1;
+
+	for (int i = 0; i < count; i++) {
 		int r = sendto(sdi->sock, (const char *)ud,
 				dataSize + (sizeof(int) * 2),
 				MSG_CONFIRM, (const struct sockaddr *) &servaddr,  sizeof(servaddr));
@@ -177,26 +210,43 @@ int easyUdpSend(SDI *sdi, char *dataBuffer, int dataSize) {
 	return 0;
 }
 
+// Called from the users callback function to send back a responce.
 int easyUdpRespond(SDI *sdi, char *dataBuffer, int dataSize) {
+
+	UdpData ud;
 
 	if (dataSize <= 0)
 		dataSize = strlen(dataBuffer);
+
+	if (dataSize <= 0)
+		printf("IS zero\n");
 
 	if (dataSize > sdi->maxSize) {
 		printf("Repsond dataSize is greater than maxSize.\n");
 		return -1;
 	}
 
-	UdpData *ud = &(sdi->udpData);
+	memset(&ud, 0, sizeof(UdpData));
 
-	ud->seqNum = htonl(_seqNum);
-	ud->dataSize = htonl(dataSize);
-	memcpy(ud->dataBuffer, dataBuffer, dataSize);
+	ud.seqNum = htonl(_seqNum);
+	ud.dataSize = htonl(dataSize);
+	memcpy(ud.dataBuffer, dataBuffer, dataSize);
+	int count = sdi->sendCount;
 
-	for (int i = 0; i < sdi->sendCount; i++) {
-		sendto(sdi->sock, (const char *)ud,
+	if (count <= 0)
+		count = 1;
+
+	sdi->from.sin_port = htons(sdi->listenPort);
+
+	// printf("Send response '%s', %s:%d\n", ud->dataBuffer, inet_ntoa(sdi->from.sin_addr), ntohs(sdi->from.sin_port));
+
+	for (int i = 0; i < count; i++) {
+		sendto(sdi->sock,
+				(const char *)&ud,
 				dataSize + (sizeof(int) * 2),
-				0, (const struct sockaddr *) &sdi->from,  sizeof(sdi->from));
+				0,
+				(const struct sockaddr *)&sdi->from,
+			   	sizeof(sdi->from));
 	}
 
 	_seqNum++;
